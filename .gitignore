@@ -1,5 +1,6 @@
 # Confidential Files
 /Data/
+/Data_Affected_Counties/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
