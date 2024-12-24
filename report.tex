@@ -1,0 +1,468 @@
+\documentclass[12pt]{article}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{graphicx}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{setspace}
+\usepackage{float}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+
+\begin{document}
+
+\title{\textbf{Analysis of Hurricane Helene Impacts and the 2023 ``Year of the Trail'' Initiative \\ Using AllTrails Usage Data}}
+\author{Zakk Heile}
+\date{\today}
+\maketitle
+
+\begin{abstract}
+This report investigates two distinct topics employing monthly AllTrails \cite{AllTrails} usage data across North Carolina counties from January 2022 through December 2024: 
+(1) The impact of Hurricane Helene (late September 2024) on Western NC trail visitation, and 
+(2) The 2023 ``Year of the Trail'' initiative’s effect on trail usage compared to 2022. 
+
+Methods include data cleaning, feature engineering (e.g., monthly-to-quarter aggregations, ratio calculations), various normalization options (z-score, min-max), clustering (K-means, Hierarchical, Spectral), and dimensionality reduction (PCA, PaCMAP). We discuss assumptions, present results for both the hurricane impact and the Year of the Trail, and highlight major insights derived from the analysis.
+\end{abstract}
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+The AllTrails dataset recorded monthly hiking or trail usage, by county, in North Carolina from January 2022 to December 2024. This information requires an AllTrails user to actively "record" their movement along a trail on the AllTrails app. To investigate Hurricane Helene’s impact and the success of the 2023 Year of the Trail, the dataset was \emph{transposed} so that:
+\begin{itemize}
+    \item Each row corresponds to one county.
+    \item Each column corresponds to a specific month (e.g., 2024-08).
+\end{itemize}
+
+We note that AllTrails usage can serve only as a proxy or estimate of real visitation; variations in platform popularity or user demographics can create biases in the data. For instance, one may suspect that users are more likely to record hikes at state parks versus local parts on AllTrails. However, by normalizing the rows or comparing \emph{ratios} (e.g., 2024 usage / 2023 usage for the same month and same county), many of these biases likely reduce because we are just focusing on trends for individual counties.  
+
+Additionally, certain months or columns can be excluded or aggregated to simplify analysis, including:
+\begin{itemize}
+    \item Aggregating months into quarters (e.g., Q1, Q2, Q3, Q4).
+    \item Filtering out columns before August 2024 or focusing only on September--December 2024.
+    \item Computing multiplicative ratios to compare month in one year vs.\ the same month in the previous year.
+\end{itemize}
+
+To remove the effect of county size or popularity from the clustering, optional \emph{normalizations} can be applied per-row (min-max scaling or z-score scaling).
+
+\vspace{0.5cm}
+\hrule
+\vspace{0.5cm}
+
+\textbf{Overview of Report Organization.} First, we focus on the Hurricane Helene analysis, describing the methods, dimensionality reductions, clustering approaches, and results. Afterwards, we present the analyses around the 2023 Year of the Trail initiative, including quarter-based comparisons and overall year-over-year growth.
+
+\newpage
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Hurricane Helene Impact Analysis}
+\label{sec:hurricane}
+
+\subsection{Data Subset and Feature Preparation}
+The 2024 hurricane of interest occurred in late September 2024, with potential spillover effects in October, November, and even December 2024. We therefore focus on:
+\begin{itemize}
+    \item \textbf{Western NC counties} marked as heavily impacted by the State of North Carolina (e.g., Buncombe, Haywood, Yancey, etc.).
+    \item \textbf{Columns from August 2024 to December 2024} to capture pre- and post-hurricane months.
+\end{itemize}
+
+We also create \emph{ratio features}:
+\begin{align}
+    \text{Ratio}_{\text{(County, Month)}} = 
+    \frac{\text{Usage}_{\text{(County, Month in 2024)}}}
+         {\text{Usage}_{\text{(County, Month in 2023)}} + \epsilon} 
+\end{align}
+where $\epsilon = 0.01$ is added in the denominator to avoid division by zero. These ratio columns (e.g., 2024-Aug / 2023-Aug, 2024-Sep / 2023-Sep, \ldots, 2024-Dec / 2023-Dec) form a 5-dimensional feature space if we select August--December 2024. Each county is thus a single point in a 5D space.
+
+\subsection{Dimension Reduction (PCA, PaCMAP) and Pairwise Visualization}
+\label{subsec:dimred}
+\paragraph{PCA \cite{PCAReference}}
+We apply Principal Component Analysis (PCA) to the 5-dimensional ratio space. 
+\begin{itemize}
+    \item \textbf{Eigenvectors \& Eigenvalues:} PCA solves for the eigenvectors of the covariance matrix, projecting data onto orthogonal directions of maximal variance. The first principal component often captures the largest fraction of variance. 
+    \item \textbf{Example Result:} In our data, the first principal component can nearly capture 80\%+ of the total variance.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.5\linewidth]{5Dcorrelationmatrix.png}
+    \caption{Pairwise Correlation of 5 Ratio Features}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.70\linewidth]{5Dpairplot.png}
+    \caption{Pairplot of Variables}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.75\linewidth]{image.png}
+    \caption{Variance Captured by Projection of Varying Dimensions}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Component} & \textbf{Eigenvalue} \\ \hline
+1 & 0.568030 \\ \hline
+2 & 0.100135 \\ \hline
+3 & 0.054172 \\ \hline
+4 & 0.024371 \\ \hline
+5 & 0.010833 \\ \hline
+\end{tabular}
+\caption{Eigenvalues of PCA Components}
+\label{tab:eigenvalues}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\textbf{Reconstruction Type} & \textbf{MSE} & \textbf{Manhattan Distance} \\ \hline
+1 Component Reconstruction & 0.036878 & 0.142089 \\ \hline
+2 Component Reconstruction & 0.017392 & 0.102187 \\ \hline
+\end{tabular}
+\caption{Reconstruction Errors}
+\label{tab:reconstruction_errors}
+\end{table}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|c|c|}
+\hline
+\textbf{Statistic} & \textbf{Value} \\ \hline
+Average Row Sum & 4.528379 \\ \hline
+Average Row Sum of Squares & 5.412948 \\ \hline
+\end{tabular}
+\caption{Average Row Statistics for Benchmarking}
+\label{tab:average_row_stats}
+\end{table}
+
+Based on the above results, we lose minimal information when projecting onto a 2D or even 1D subspace.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{5D-1D-Projection.png}
+    \caption{Counties by their projection onto the vector capturing the most variance}
+    \label{fig:enter-label}
+\end{figure}
+
+
+\paragraph{PaCMAP.}
+We also use \emph{PaCMAP}~\cite{PacMapPaper} to reduce from 5D to 2D for more visually interpretable cluster plots. PaCMAP is a new manifold approach that preserves local and global structures better than older methods.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{pacmap5D.png}
+    \caption{PaCMAP Dimension Reduction}
+    \label{fig:enter-label}
+\end{figure}
+
+From the dimension reduction, we would expect the data to be logically clustered into 3 or 4 clusters. Our next analysis confirms this.
+
+
+\subsection{Clustering Methods}
+We tried several clustering algorithms on this 5-dimensional ratio data:
+\begin{enumerate}
+    \item \textbf{K-Means \cite{KMeansReference}}
+    \item \textbf{Agglomerative Hierarchical Clustering \cite{HierarchicalReference}}
+    \item \textbf{Spectral Clustering \cite{SpectralReference}}
+\end{enumerate}
+All three clustering algorithms created nearly identical clusters for the same number of clusters. 
+
+We choose to perform clustering with $k=4$ clusters because the K-Mean's loss as a function of the number of clustering starts to have diminishing improvements (the second derivative magnitude is decreasing).
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\linewidth]{loss-5D.png}
+    \caption{Loss as a Function of the Number of Clusters}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{hier5-k=4.png}
+    \caption{Clustering of 5D Space with 4 Clusters}
+    \label{fig:enter-label}
+\end{figure}
+
+As Hierarchical Clustering starts with each county in its own cluster and merges them together, we can produce a Dendogram that shows this iterative process.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\linewidth]{dendogram5.png}
+    \caption{Dendogram}
+    \label{fig:enter-label}
+\end{figure}
+
+For interest, we include clusters for a surplus of numbers of clusters, computed with K-Means.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.1\linewidth]{manydifferentclusters5D.png}
+    \caption{Varying Number of Clusters}
+    \label{fig:enter-label}
+\end{figure}
+
+\subsection{Estimating Impact Ratios for Western Counties}
+\label{subsec:impact_western}
+Beyond clustering, we quantify the \emph{impact} of Hurricane Helene by:
+\begin{enumerate}
+    \item \textbf{Compute an average growth factor} from 2023 to 2024 for all \emph{non-impacted} counties (i.e., a baseline ratio).
+    \item \textbf{Estimate expected 2024 usage for impacted counties} by multiplying each impacted county’s 2023 usage by that baseline ratio.
+    \item \textbf{Divide actual 2024 usage by the estimated 2024 usage}, so:
+    \begin{align}
+    \text{Impact Ratio} 
+    = \frac{\text{Actual 2024 Usage (Impacted County)}}{\text{Expected 2024 Usage (Impacted County)}}.
+    \end{align}
+    A value $>1$ indicates the actual usage was higher than expected (i.e., possibly not as severely impacted), and a value $<1$ indicates the county underperformed relative to the baseline (likely a hurricane-related drop).
+\end{enumerate}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{hurricaneoctober.png}
+    \caption{October Impact Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{hurricanenovember.png}
+    \caption{November Impact Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{hurricanedecember.png}
+    \caption{December Impact Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+In particular, we bring your attention to Yancey County, going from 1640 recorded hikes in October 2023 to 8 in October 2024.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.1\linewidth]{TableHurricaneImpact.png}
+    \caption{Numerical Comparison}
+    \label{fig:enter-label}
+\end{figure}
+
+\newpage
+
+\textbf{Other items of note:}
+
+All state parks west of I-77 were closed through at least October 31, 2024:
+\begin{itemize}
+    \item Chimney Rock State Park - Rutherford County
+    \item Crowders Mountain State Park - Gaston County
+    \item Elk Knob State Park - Watauga County
+    \item Gorges State Park - Transylvania County
+    \item Grandfather Mountain State Park -  *Avery / Caldwell / Watauga counties
+    \item Lake James State Park - Burke and McDowell Counties
+    \item Lake Norman State Park - Iredell County
+    \item Mount Jefferson State Natural Area - Ashe County
+    \item Mount Mitchell State Park - Yancey County
+    \item New River State Park - Ashe and Alleghany counties
+    \item Rendezvous Mountain - Wilkes County
+    \item South Mountains State Park - Burke County
+    \item Stone Mountain State Park - Alleghany and Wilkes counties
+\end{itemize}
+
+Most events and programs scheduled for October were canceled at ALL state parks across NC.
+
+\textbf{Opened Nov 1} - Grandfather Mountain, Gorges, Crowders Mountain, Lake Norman and Rendezvous Mountain.
+
+\textbf{Opened Nov 19 or soon after} - Elk Knob, Lake James, New River and Stone Mountain state parks and Mount Jefferson Natural Area - at least partially. 
+
+\textbf{State Parks still closed} - Chimney Rock, Mount Mitchell, South Mountains
+
+
+
+\subsection{Conclusion}
+\label{subsec:helene_conclusion}
+
+In summary, the data suggests that certain western counties show significantly lower 2024 usage than the \emph{expected} usage (i.e., Impact Ratio $<1$). Other counties remain stable or even show slight gains. The cluster structures align moderately with geographic groupings and severity of impact, validating the initial hypothesis that Hurricane Helene had a region-specific effect.
+
+Our impact ratios and clusters closely align with the  "Hurricane Helene Damage and Needs Assessment" by NC OSBM \cite{HeleneOSBM}:
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.1\linewidth]{OSBM Impact.jpg}
+    \caption{From the "Hurricane Helene Damage and Needs Assessment" by NC OSBM}
+    \label{fig:enter-label}
+\end{figure}
+
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Year of the Trail (2023) Analysis}
+\label{sec:year_of_trail}
+
+\subsection{Motivation and Data Framework}
+The state of North Carolina declared 2023 the ``Year of the Trail,'' sparking media and local promotions. We aim to see if the initiative corresponded to \emph{increased AllTrails usage} relative to 2022. Similar to the hurricane analysis, we compare 2023 vs. 2022 usage through:
+\begin{itemize}
+    \item \textbf{Ratios}: $\text{Usage}_{2023}/ \text{Usage}_{2022}$ by county and month.
+    \item \textbf{Quarterly Aggregations}: Grouping Jan--Mar (Q1), Apr--Jun (Q2), Jul--Sep (Q3), Oct--Dec (Q4).
+\end{itemize}
+We can either analyze the 12-dimensional monthly feature space (all 12 months in 2023 vs.\ 2022) or just compare total usage year-over-year (1-dimension).
+
+\subsection{Statistical and Clustering Methods}
+We again apply:
+\begin{itemize}
+    \item \textbf{Clustering on Ratios} to see if counties being similar in growth lines up geographically.
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=1.0\linewidth]{YOTClusters.png}
+        \caption{YOT Clusters}
+        \label{fig:enter-label}
+    \end{figure}
+    \item \textbf{PCA, Pairplots, PacMap} to reduce dimensionality from 12 months to 1 or 2 components.
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.8\linewidth]{YOTPaCMAP.png}
+        \caption{12D to 2D Reduction}
+        \label{fig:enter-label}
+    \end{figure}
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.8\linewidth]{PCA12D.png}
+        \caption{Variance Captured by Principal Components}
+        \label{fig:enter-label}
+    \end{figure}
+\end{itemize}
+
+\paragraph{Cautions.}
+We remind the reader that usage could be influenced by platform popularity growth or new trails listed on AllTrails. That is to say that these ratios could be inflated if AllTrails has grown in popularity in the past year. However, assuming the growth of the platform was consistent across counties, we can still compare the ratios to other counties, considering relative growth and not interpreting an absolute number.
+
+\subsection{Quarter-Based Ratios}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Q1YOT.png}
+    \caption{Quarter 1 YOT Growth Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Q2YOT.png}
+    \caption{Quarter 2 YOT Growth Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Q3YOT.png}
+    \caption{Quarter 3 YOT Growth Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\linewidth]{Q4YOT.png}
+    \caption{Quarter 4 YOT Growth Ratios}
+    \label{fig:enter-label}
+\end{figure}
+
+An interesting finding is that the Q4 and Q3 ratios (2023 vs. 2022) was generally higher than Q1 or Q2, suggesting that the Year of the Trail’s effect might have \emph{increased} later in the year. This could indicate that awareness campaigns and events ramped up over time, or a general awareness of trails going into this fall combined with the initiative to yield stronger usage growth in Q3/Q4 that was not seen in the previous year.
+
+\subsection{Overall Growth}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.1\linewidth]{overallYOT.png}
+    \caption{Overall YOT Growth}
+    \label{fig:enter-label}
+\end{figure}
+
+\newpage
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\section{Discussion, Limitations, and Conclusion}
+
+\paragraph{Key Insights.}
+\begin{itemize}
+    \item \textbf{Hurricane Helene Impact.} Western NC counties showed a measurable dip (90\%) in 2024 usage relative to expected baseline growth, suggesting the hurricane substantially disrupted typical trail visitation. Clustering in the 5D feature space was consistent with known impacted areas.
+    \item \textbf{Year of the Trail (2023).} 90 counties had positive growth in trail use from 2022 to 2023, with the majority of counties' usage growing by 30-40\%, indicating substantial growth in usage. Data hints that Q3/Q4 were particularly robust, possibly reflecting momentum from the initiative.
+\end{itemize}
+
+\paragraph{Data and Method Limitations.}
+\begin{itemize}
+    \item \textbf{AllTrails as a Proxy.} Not all hikers use AllTrails, and platform usage may change over time for reasons unrelated to actual trail visitation.
+    \item \textbf{Bias Towards State Parks.} It is plausible that AllTrails users are more likely to record hikes to state parks compared to local parks so hikes at state parks could be over-represented in this sample compared to the overall data distribution. This could mean that counties with state parks could appear more impacted by our metrics if state parks were closed for longer than local parks.
+    \item \textbf{Estimating Visitation if no Hurricane.} Even though our attempt to multiply 2023 visitation per county by the growth the rest of the state saw from the same month one year ago is a good start, it is possible that counties have different growth trajectories and this is an overgeneralization. However, compared to the alternative of calculating a growth multiple based on say August 2024 to August 2023, or another month right before the hurricane, this has the advantage of preserving the season and general weather and climate trends that cannot be replicated at another timestamp.
+\end{itemize}
+
+\paragraph{Conclusion.}
+We presented a comprehensive pipeline for cleaning and transforming monthly AllTrails usage data, applying various clustering, dimensionality reduction, and data analysis techniques to address:
+\begin{enumerate}
+    \item The local \emph{disruption} from Hurricane Helene in late September 2024 in Western NC.
+    \item The \emph{spatially broader} usage growth from the 2023 Year of the Trail.
+\end{enumerate}
+Results affirm that certain western counties faced sharp visitation drops in the fall of 2024, while 2023 usage displayed a noticeable positive jump over 2022, especially in later quarters. Future work could incorporate more external validation (e.g., official park statistics, AllTrails user growth) to confirm the magnitude of these patterns.
+
+\clearpage
+\begin{thebibliography}{9}
+
+\bibitem{AllTrails}
+    ``AllTrails: Trail Guides and Maps for Hiking, Camping, and Running,'' 
+    Available: \url{https://www.alltrails.com/}.
+
+\bibitem{PCAReference}
+    I.~Jolliffe, 
+    ``Principal Component Analysis,'' 
+    \textit{Springer Series in Statistics}, 2002. 
+    DOI: \url{https://doi.org/10.1007/b98835}.
+
+\bibitem{PacMapPaper}
+    Y.~Wang, H.~Huang, C.~Rudin, and Y.~Shaposhnik, 
+    ``Understanding How Dimension Reduction Tools Work: An Empirical Approach to Deciphering t-SNE, UMAP, TriMap, and PaCMAP for Data Visualization,''
+    \textit{Journal of Machine Learning Research}, vol. 22, no. 201, pp. 1--73, 2021. 
+    Available: \url{http://jmlr.org/papers/v22/20-1061.html}.
+
+\bibitem{KMeansReference}
+    J.~MacQueen, 
+    ``Some Methods for Classification and Analysis of Multivariate Observations,'' 
+    in \textit{Proceedings of the Fifth Berkeley Symposium on Mathematical Statistics and Probability}, 1967, pp. 281--297.
+
+\bibitem{HierarchicalReference}
+    G.~N.~Lance and W.~T.~Williams, 
+    ``A General Theory of Classificatory Sorting Strategies: 1. Hierarchical Systems,'' 
+    \textit{The Computer Journal}, vol. 9, no. 4, pp. 373--380, 1967. 
+    DOI: \url{https://doi.org/10.1093/comjnl/9.4.373}.
+
+\bibitem{SpectralReference}
+    A.~Ng, M.~Jordan, and Y.~Weiss, 
+    ``On Spectral Clustering: Analysis and an Algorithm,'' 
+    in \textit{Advances in Neural Information Processing Systems}, 2002, pp. 849--856.
+
+\bibitem{HeleneOSBM}
+    ``Hurricane Helene Damage and Needs Assessment,'' 
+    Office of State Budget and Management, North Carolina, 2024. 
+    Available: \url{https://www.osbm.nc.gov/hurricane-helene-dna/open#:~:text=Updated%20estimates%20indicate%20damage%20and,tornadoes%20generated%20by%20the%20storm}.
+
+
+\bibitem{Pandas}
+    W.~McKinney, 
+    ``Data Structures for Statistical Computing in Python,'' 
+    in \textit{Proceedings of the 9th Python in Science Conference}, 2010, pp. 56--61. 
+    DOI: \url{https://doi.org/10.25080/Majora-92bf1922-00a}.
+
+\bibitem{Geopandas}
+    J.~Jordahl, 
+    ``GeoPandas: Python Tools for Geographic Data,'' 
+    2014. 
+    Available: \url{https://geopandas.org/}.
+
+\end{thebibliography}
+
+
+\end{document}
